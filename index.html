@@ -23,7 +23,6 @@
 <body>
   <canvas id="game"></canvas>
 
-  <!-- Minimal start overlay: one clear gesture to unlock audio -->
   <div id="startOverlay">
     <button id="startBtn">Tap to Start</button>
   </div>
@@ -54,6 +53,9 @@ let birdImg=null, pipeImg=null, bgImg=null, music=null, assetsLoaded=false;
 function loadImage(url){ return new Promise(res=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=()=>{ console.warn('Image failed:',url); res(null); }; i.src=url; }); }
 
 async function loadBundled(){
+  // If already loaded, just return immediately.
+  if (assetsLoaded) return;
+
   birdImg = await loadImage('assets/bird.png') || await loadImage('assets/bird.jpg');
   pipeImg = await loadImage('assets/pipe.png') || await loadImage('assets/pipe.jpg');
   bgImg   = await loadImage('assets/bg.jpg')   || await loadImage('assets/bg.png');
@@ -65,7 +67,7 @@ async function loadBundled(){
     music.preload = 'auto';
     music.volume = 0.5;
     // check if audio file loads (network error will show in console)
-    music.addEventListener('error', ()=>console.warn('Audio failed to load (check assets/music.mp3 or path/mime).'));
+    music.addEventListener('error', (e)=>console.warn('Audio failed to load (check assets/music.mp3 or path/mime).', e));
   }catch(e){ music=null; console.warn('Audio creation error',e); }
   if(birdImg){ bird.w = Math.min(80, birdImg.width*0.22 + 20); bird.h = Math.min(60, birdImg.height*0.22 + 20); }
   assetsLoaded = true;
@@ -143,7 +145,9 @@ function playerFlap(){
   if(!assetsLoaded) return;
   if(!playing){ resetGame(); return; }
   bird.vy = -SETTINGS.jump;
-  if(music && music.paused){ try{ music.play().catch(()=>{}); }catch(e){} }
+  // Optional: Resume music if it was paused by something else,
+  // but usually resetGame handles the main play() call.
+  if(music && music.paused && playing){ try{ music.play().catch(()=>{}); }catch(e){} }
 }
 
 // Input
@@ -156,23 +160,34 @@ const startOverlay = document.getElementById('startOverlay');
 const startBtn = document.getElementById('startBtn');
 
 async function onStartClicked(){
-  // attempt to unlock audio; this is a direct user gesture so should be allowed
+  // 1. Wait for assets to finish loading if they haven't already.
+  //    We wait for the *same promise* that started on page load.
+  if (!assetsLoaded) {
+      startBtn.textContent = "Loading..."; // Optional feedback
+      await assetsPromise;
+  }
+
+  // 2. Try to unlock audio immediately within this user gesture.
+  //    Even if it fails here (e.g. file not ready), we've made the attempt.
   if(music){
-    try{ await music.play(); } catch(err){ console.warn('music.play() rejected on start:', err); }
+    try{
+        await music.play();
+        music.pause(); // Pause immediately; resetGame will play it for real.
+        music.currentTime = 0;
+    } catch(err){
+        console.warn('Audio unlock attempt failed:', err);
+    }
   }
-  // remove overlay and start game
+
+  // 3. Remove overlay and start game
   if(startOverlay && startOverlay.parentNode) startOverlay.parentNode.removeChild(startOverlay);
-  // ensure assets loaded; if not, wait then start
-  if(!assetsLoaded){
-    await loadBundled(); // fallback load if not done
-  }
   resetGame();
 }
 startBtn.addEventListener('click', onStartClicked);
 startBtn.addEventListener('touchstart', (e)=>{ e.preventDefault(); onStartClicked(); }, { passive:false });
 
-// ensure assets load in background and log failures
-loadBundled();
+// Start loading assets immediately and keep the promise.
+const assetsPromise = loadBundled();
 
 // start rendering loop
 loop();
