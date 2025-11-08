@@ -3,166 +3,80 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Flappy Custom — Bundled Assets (Developer-controlled)</title>
+  <title>Flappy — Fullscreen</title>
   <style>
-    :root{--accent:#ffcc00}
-    html,body{height:100%;margin:0;font-family:Inter, system-ui, Arial, sans-serif;background:#0b1220;color:#fff}
-    .wrap{display:grid;grid-template-columns:420px 1fr;gap:18px;padding:18px;height:100%;box-sizing:border-box}
-    .panel{background:linear-gradient(180deg,#071025 0%, #081323 100%);border-radius:12px;padding:12px;box-shadow:0 8px 30px rgba(0,0,0,.6)}
-    .controls{display:flex;flex-direction:column;gap:10px}
-    label{font-size:13px;color:#cbd5e1}
-    button{background:var(--accent);border:0;padding:10px;border-radius:10px;font-weight:600;cursor:pointer}
-    button.secondary{background:transparent;border:1px solid rgba(255,255,255,.08)}
-    .canvasWrap{display:flex;align-items:center;justify-content:center;height:100%;}
-    canvas{background:#7ec0ee;border-radius:12px;box-shadow:0 8px 30px rgba(2,6,23,.6)}
-    .row{display:flex;gap:8px;align-items:center}
-    small{color:#94a3b8}
-    .meta{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:8px}
-    input[type=range]{width:100%}
-    .hint{font-size:12px;color:#94a3b8}
-    .logo{font-weight:700;color:var(--accent)}
-    .footer{font-size:12px;color:#94a3b8;margin-top:8px}
-    .instructions{background:rgba(255,255,255,0.02);padding:8px;border-radius:8px;font-size:13px;color:#cbd5e1}
+    html,body{height:100%;margin:0;background:#000}
+    canvas{display:block;width:100vw;height:100vh}
+    /* hide scrollbars on mobile */
+    body{overflow:hidden}
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="panel" style="width:420px">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <div>
-          <div class="logo">Custom Flappy — Bundled Assets</div>
-          <small>Developer-controlled assets (placed in <code>assets/</code>)</small>
-        </div>
-        <div style="text-align:right">
-          <div id="scoreTop">Score: 0</div>
-          <small id="bestTop">Best: 0</small>
-        </div>
-      </div>
-
-      <hr style="border:none;height:1px;background:rgba(255,255,255,.03);margin:12px 0">
-
-      <div class="controls">
-        <div class="instructions">
-          <strong>How it works</strong>
-          <ol>
-            <li>Put your images and audio inside a folder named <code>assets/</code> in the repo root.</li>
-            <li>Required filenames (exact): <code>assets/bird.png</code>, <code>assets/pipe.png</code>, <code>assets/bg.jpg</code>, <code>assets/music.mp3</code>.</li>
-            <li>The game loads those files automatically — users will not upload anything themselves.</li>
-          </ol>
-        </div>
-
-        <div>
-          <label>Game controls</label>
-          <div class="hint">Click / Tap / Space to flap. Use Start to begin.</div>
-        </div>
-
-        <div class="row">
-          <button id="startBtn">Start / Restart</button>
-          <button class="secondary" id="pauseBtn">Pause</button>
-        </div>
-
-        <div>
-          <label>Music volume</label>
-          <input id="vol" type="range" min="0" max="1" step="0.01" value="0.5">
-        </div>
-
-        <div>
-          <label>Game settings</label>
-          <div class="row">
-            <small class="hint">Gravity</small>
-            <input id="gravity" type="range" min="0.2" max="1.5" step="0.01" value="0.6">
-          </div>
-          <div class="row">
-            <small class="hint">Jump strength</small>
-            <input id="jump" type="range" min="3" max="8" step="0.1" value="5">
-          </div>
-          <div class="row">
-            <small class="hint">Pipe gap</small>
-            <input id="gap" type="range" min="100" max="300" step="2" value="150">
-          </div>
-        </div>
-
-        <div class="meta">
-          <div class="hint">Controls: Click / Space / Tap</div>
-          <div class="footer">Bundled assets only — no uploads</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="panel canvasWrap">
-      <canvas id="game" width="800" height="600"></canvas>
-    </div>
-  </div>
+  <canvas id="game"></canvas>
 
 <script>
-// Flappy game — developer-controlled bundled assets version
+// Fullscreen Flappy — developer bundled assets, no UI text
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-let W = canvas.width, H = canvas.height;
+let W=0,H=0;
 
-// UI
-const startBtn = document.getElementById('startBtn');
-const pauseBtn = document.getElementById('pauseBtn');
-const scoreTop = document.getElementById('scoreTop');
-const bestTop = document.getElementById('bestTop');
-const vol = document.getElementById('vol');
-const gravityInput = document.getElementById('gravity');
-const jumpInput = document.getElementById('jump');
-const gapInput = document.getElementById('gap');
+// gameplay settings
+const gravityInput = { value: 0.6 };
+const jumpInput = { value: 5 };
+const gapInput = { value: 150 };
 
-// assets will be loaded from /assets/ (developer must place them there)
-let birdImg = null, pipeImg = null, bgImg = null;
-let music = null;
+// assets
+let birdImg=null, pipeImg=null, bgImg=null, music=null;
 
-function loadImage(url){ return new Promise((res)=>{ const img=new Image(); img.onload=()=>res(img); img.onerror=()=>res(null); img.src=url; }); }
+function loadImage(url){ return new Promise(res=>{ const img=new Image(); img.onload=()=>res(img); img.onerror=()=>res(null); img.src=url; }); }
 
 async function loadBundled(){
-  // Try load common filenames. You can change these names if you prefer jpg/png mix.
   birdImg = await loadImage('assets/bird.png') || await loadImage('assets/bird.jpg');
   pipeImg = await loadImage('assets/pipe.png') || await loadImage('assets/pipe.jpg');
   bgImg = await loadImage('assets/bg.jpg') || await loadImage('assets/bg.png');
-  // audio
-  try{
-    // try mp3 then ogg
-    music = new Audio('assets/music.mp3');
-    music.loop = true; music.volume = vol.value;
-    // don't autoplay; will play on user interaction
-  }catch(e){ music = null; }
-  // set bird size defaults if image present
+  try{ music = new Audio(); music.src = 'assets/music.mp3'; music.loop=true; music.preload='auto'; music.volume = 0.5; }catch(e){ music=null; }
   if(birdImg){ bird.w = Math.min(80, birdImg.width*0.22 + 20); bird.h = Math.min(60, birdImg.height*0.22 + 20); }
 }
 
-// fallback bg draw
-function drawFallbackBg(ctx){ ctx.fillStyle='#87CEEB'; ctx.fillRect(0,0,W,H); ctx.fillStyle='#7CFC00'; ctx.fillRect(0,H-80,W,80); }
+function resize(){ const dpr = window.devicePixelRatio || 1; W = Math.max(320, Math.floor(window.innerWidth)); H = Math.max(240, Math.floor(window.innerHeight)); canvas.width = Math.floor(W * dpr); canvas.height = Math.floor(H * dpr); canvas.style.width = W + 'px'; canvas.style.height = H + 'px'; ctx.setTransform(dpr,0,0,dpr,0,0); }
+window.addEventListener('resize', resize);
 
 // game state
 let playing=false, paused=false;
 let bird={x:150,y:300,vy:0,w:40,h:30,angle:0};
-let pipes=[]; let frame=0; let score=0; let best = parseInt(localStorage.getItem('flappy_best')||0,10);
-bestTop.textContent = 'Best: '+best;
+let pipes=[]; let frame=0; let score=0; let best=0;
 
-function reset(){ bird={x:150,y:H/2,vy:0,w:bird.w||40,h:bird.h||30,angle:0}; pipes=[]; frame=0; score=0; playing=true; paused=false; if(music){ try{ music.currentTime=0; music.play(); }catch(e){} } }
-function spawnPipe(){ const gap=parseInt(gapInput.value,10); const min=80,max=H-200; const top=Math.floor(Math.random()*(max-min))+min; pipes.push({x:W, top, width:80, passed:false}); }
+function reset(){ bird={x:150,y:H/2,vy:0,w:bird.w||40,h:bird.h||30,angle:0}; pipes=[]; frame=0; score=0; playing=true; paused=false; if(music){ try{ music.currentTime=0; music.play().catch(()=>{}); }catch(e){} } }
+
+function spawnPipe(){ const gap = parseInt(gapInput.value,10); const min=80, max=H-200; const top = Math.floor(Math.random()*(max-min))+min; pipes.push({x:W, top, width:80, passed:false}); }
 function rectOverlap(a,b){ return !(a.r < b.l || a.l > b.r || a.b < b.t || a.t > b.b); }
-function die(){ playing=false; if(music){ try{ music.pause(); }catch(e){} } }
+function die(){ playing=false; if(music) try{ music.pause(); }catch(e){} }
 
-function update(){ if(!playing||paused) return; frame++; const g=parseFloat(gravityInput.value); bird.vy+=g; bird.y+=bird.vy; bird.angle = Math.max(-0.6, Math.min(0.9, bird.vy/10)); if(frame%100===0) spawnPipe(); for(let i=pipes.length-1;i>=0;i--){ pipes[i].x -= 3 + Math.floor(frame/1000); const p=pipes[i]; const gap=parseInt(gapInput.value,10); if(!p.passed && p.x + p.width < bird.x){ p.passed=true; score++; scoreTop.textContent='Score: '+score; if(score>best){ best=score; localStorage.setItem('flappy_best',best); bestTop.textContent='Best: '+best; } } if(p.x + p.width < -50) pipes.splice(i,1); const birdBox={l:bird.x - bird.w/2, r:bird.x + bird.w/2, t:bird.y - bird.h/2, b:bird.y + bird.h/2}; const topBox={l:p.x, r:p.x+p.width, t:0, b:p.top}; const bottomBox={l:p.x, r:p.x+p.width, t:p.top+gap, b:H}; if(rectOverlap(birdBox, topBox) || rectOverlap(birdBox, bottomBox)){ die(); } } if(bird.y + bird.h/2 >= H-80) die(); if(bird.y - bird.h/2 <= 0){ bird.y = bird.h/2; bird.vy = 0; } }
+function update(){ if(!playing || paused) return; frame++; const g = parseFloat(gravityInput.value); bird.vy += g; bird.y += bird.vy; bird.angle = Math.max(-0.6, Math.min(0.9, bird.vy/10)); if(frame % 100 === 0) spawnPipe(); for(let i = pipes.length-1; i>=0; i--){ pipes[i].x -= 3 + Math.floor(frame/1000); const p = pipes[i]; const gap = parseInt(gapInput.value,10); if(!p.passed && p.x + p.width < bird.x){ p.passed = true; score++; if(score>best) best=score; } if(p.x + p.width < -50) pipes.splice(i,1); const birdBox={l:bird.x - bird.w/2, r:bird.x + bird.w/2, t:bird.y - bird.h/2, b:bird.y + bird.h/2}; const topBox={l:p.x, r:p.x+p.width, t:0, b:p.top}; const bottomBox={l:p.x, r:p.x+p.width, t:p.top+gap, b:H}; if(rectOverlap(birdBox, topBox) || rectOverlap(birdBox, bottomBox)){ die(); } }
+  if(bird.y + bird.h/2 >= H-80) die(); if(bird.y - bird.h/2 <= 0){ bird.y = bird.h/2; bird.vy = 0; }
+}
 
-function draw(){ if(bgImg){ ctx.drawImage(bgImg, 0, 0, bgImg.width, bgImg.height, 0, 0, W, H); } else drawFallbackBg(ctx); for(const p of pipes){ const gap=parseInt(gapInput.value,10); const pipeW=p.width; if(pipeImg){ ctx.save(); ctx.translate(p.x + pipeW/2, p.top); ctx.scale(1,-1); ctx.drawImage(pipeImg, -pipeW/2, 0, pipeW, p.top); ctx.restore(); ctx.drawImage(pipeImg, p.x, p.top+gap, pipeW, H - (p.top+gap) - 80); } else { ctx.fillStyle='#2F855A'; ctx.fillRect(p.x, 0, pipeW, p.top); ctx.fillRect(p.x, p.top+gap, pipeW, H-(p.top+gap)-80); } } ctx.fillStyle='#5C8A00'; ctx.fillRect(0,H-80,W,80); ctx.save(); ctx.translate(bird.x, bird.y); ctx.rotate(bird.angle); if(birdImg){ const bw=bird.w, bh=bird.h; ctx.drawImage(birdImg, -bw/2, -bh/2, bw, bh); } else { ctx.fillStyle = '#FFCC00'; ctx.beginPath(); ctx.ellipse(0,0,bird.w/2,bird.h/2,0,0,Math.PI*2); ctx.fill(); ctx.fillStyle = '#000'; ctx.fillRect(6,-4,10,8); } ctx.restore(); if(!playing){ ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(W/2 - 170, H/2 - 90, 340, 140); ctx.fillStyle='#fff'; ctx.font='22px sans-serif'; ctx.textAlign='center'; ctx.fillText('Click / Space to flap — Press Start to play', W/2, H/2 - 40); ctx.fillText('Score: '+score, W/2, H/2 - 5); ctx.fillText('Best: '+best, W/2, H/2 + 30); } }
+function draw(){ // background
+  if(bgImg){ ctx.drawImage(bgImg, 0, 0, bgImg.width, bgImg.height, 0, 0, W, H); } else { ctx.fillStyle='#87CEEB'; ctx.fillRect(0,0,W,H); }
+  // pipes
+  for(const p of pipes){ const gap = parseInt(gapInput.value,10); const pipeW = p.width; if(pipeImg){ ctx.save(); ctx.translate(p.x + pipeW/2, p.top); ctx.scale(1,-1); ctx.drawImage(pipeImg, -pipeW/2, 0, pipeW, p.top); ctx.restore(); ctx.drawImage(pipeImg, p.x, p.top+gap, pipeW, H - (p.top+gap) - 80); } else { ctx.fillStyle='#2F855A'; ctx.fillRect(p.x, 0, pipeW, p.top); ctx.fillRect(p.x, p.top+gap, pipeW, H-(p.top+gap)-80); } }
+  // ground
+  ctx.fillStyle='#5C8A00'; ctx.fillRect(0,H-80,W,80);
+  // bird
+  ctx.save(); ctx.translate(bird.x, bird.y); ctx.rotate(bird.angle); if(birdImg){ ctx.drawImage(birdImg, -bird.w/2, -bird.h/2, bird.w, bird.h); } else { ctx.fillStyle='#FFCC00'; ctx.beginPath(); ctx.ellipse(0,0,bird.w/2,bird.h/2,0,0,Math.PI*2); ctx.fill(); } ctx.restore();
+}
 
 function loop(){ update(); draw(); requestAnimationFrame(loop); }
 
-function flap(){ if(!playing){ reset(); return } bird.vy = -parseFloat(jumpInput.value); }
-window.addEventListener('keydown',(e)=>{ if(e.code==='Space'){ e.preventDefault(); flap(); } });
-canvas.addEventListener('mousedown',()=>flap()); canvas.addEventListener('touchstart',(e)=>{ e.preventDefault(); flap(); },{passive:false});
-startBtn.addEventListener('click',()=>reset()); pauseBtn.addEventListener('click',()=>{ paused=!paused; pauseBtn.textContent = paused ? 'Resume' : 'Pause'; if(paused){ if(music) try{ music.pause(); }catch(e){} } else { if(music && playing) try{ music.play(); }catch(e){} } });
-vol.addEventListener('input',()=>{ if(music) music.volume = vol.value; if(music) music.volume = vol.value; });
+function userFlap(){ if(!playing) { reset(); return; } bird.vy = -parseFloat(jumpInput.value); if(music && music.paused){ try{ music.play().catch(()=>{}); }catch(e){} } }
 
-// responsive canvas
-function resize(){ const maxW = Math.min(1400, Math.max(600, window.innerWidth - 480)); canvas.width = Math.floor(maxW); canvas.height = Math.floor(window.innerHeight - 80); W = canvas.width; H = canvas.height; }
-window.addEventListener('resize', ()=>resize()); resize();
+// input
+window.addEventListener('keydown', e=>{ if(e.code==='Space'){ e.preventDefault(); userFlap(); } });
+canvas.addEventListener('mousedown', ()=>userFlap());
+canvas.addEventListener('touchstart', e=>{ e.preventDefault(); userFlap(); }, {passive:false});
 
-// init: load bundled assets then start loop
+// start
+resize();
 loadBundled().then(()=>{ loop(); });
 
 </script>
