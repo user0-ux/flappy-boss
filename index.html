@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Flappy Custom — single file (with persistent uploads)</title>
+  <style>
+    :root{--accent:#ffcc00}
+    html,body{height:100%;margin:0;font-family:Inter, system-ui, Arial, sans-serif;background:#0b1220;color:#fff}
+    .wrap{display:grid;grid-template-columns:420px 1fr;gap:18px;padding:18px;height:100%;box-sizing:border-box}
+    .panel{background:linear-gradient(180deg,#071025 0%, #081323 100%);border-radius:12px;padding:12px;box-shadow:0 8px 30px rgba(0,0,0,.6)}
+    .controls{display:flex;flex-direction:column;gap:10px}
+    label{font-size:13px;color:#cbd5e1}
+    input[type=file]{color:transparent}
+    button{background:var(--accent);border:0;padding:10px;border-radius:10px;font-weight:600;cursor:pointer}
+    button.secondary{background:transparent;border:1px solid rgba(255,255,255,.08)}
+    .canvasWrap{display:flex;align-items:center;justify-content:center;height:100%;}
+    canvas{background:#7ec0ee;border-radius:12px;box-shadow:0 8px 30px rgba(2,6,23,.6)}
+    .row{display:flex;gap:8px;align-items:center}
+    small{color:#94a3b8}
+    .meta{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:8px}
+    input[type=range]{width:100%}
+    .hint{font-size:12px;color:#94a3b8}
+    .logo{font-weight:700;color:var(--accent)}
+    .footer{font-size:12px;color:#94a3b8;margin-top:8px}
+    .instructions{background:rgba(255,255,255,0.02);padding:8px;border-radius:8px;font-size:13px;color:#cbd5e1}
+    .smallbtn{background:transparent;border:1px solid rgba(255,255,255,.08);padding:6px;border-radius:8px;color:#fff;cursor:pointer}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="panel" style="width:420px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div class="logo">Custom Flappy (persistent)</div>
+          <small>Uploads are saved locally (localStorage) so they'll persist on refresh</small>
+        </div>
+        <div style="text-align:right">
+          <div id="scoreTop">Score: 0</div>
+          <small id="bestTop">Best: 0</small>
+        </div>
+      </div>
+
+      <hr style="border:none;height:1px;background:rgba(255,255,255,.03);margin:12px 0">
+
+      <div class="controls">
+        <div>
+          <label>Bird image (PNG/JPG, transparent recommended)</label>
+          <input id="birdFile" type="file" accept="image/*">
+          <div class="row" style="margin-top:6px"><button class="smallbtn" id="clearBird">Clear</button><button class="smallbtn" id="useDefaultBird">Use bundled</button></div>
+        </div>
+        <div>
+          <label>Pipe/pillar image</label>
+          <input id="pipeFile" type="file" accept="image/*">
+          <div class="row" style="margin-top:6px"><button class="smallbtn" id="clearPipe">Clear</button><button class="smallbtn" id="useDefaultPipe">Use bundled</button></div>
+        </div>
+        <div>
+          <label>Background image</label>
+          <input id="bgFile" type="file" accept="image/*">
+          <div class="row" style="margin-top:6px"><button class="smallbtn" id="clearBg">Clear</button><button class="smallbtn" id="useDefaultBg">Use bundled</button></div>
+        </div>
+        <div>
+          <label>Background music (mp3, ogg)</label>
+          <input id="musicFile" type="file" accept="audio/*">
+          <div class="row" style="margin-top:6px"><button class="smallbtn" id="clearMusic">Clear</button><button class="smallbtn" id="useDefaultMusic">Use bundled</button></div>
+        </div>
+
+        <div class="row">
+          <button id="startBtn">Start / Restart</button>
+          <button class="secondary" id="pauseBtn">Pause</button>
+        </div>
+
+        <div>
+          <label>Music volume</label>
+          <input id="vol" type="range" min="0" max="1" step="0.01" value="0.5">
+        </div>
+
+        <div>
+          <label>Game settings</label>
+          <div class="row">
+            <small class="hint">Gravity</small>
+            <input id="gravity" type="range" min="0.2" max="1.5" step="0.01" value="0.6">
+          </div>
+          <div class="row">
+            <small class="hint">Jump strength</small>
+            <input id="jump" type="range" min="3" max="8" step="0.1" value="5">
+          </div>
+          <div class="row">
+            <small class="hint">Pipe gap</small>
+            <input id="gap" type="range" min="100" max="300" step="2" value="150">
+          </div>
+        </div>
+
+        <div class="meta">
+          <div class="hint">Controls: Click / Space / Tap</div>
+          <div class="footer">Saved images are stored only in your browser (localStorage)</div>
+        </div>
+
+        <div class="instructions">
+          <strong>Deploy notes:</strong>
+          <ol style="color:#cbd5e1">
+            <li>Rename this file to <code>index.html</code> and push to a GitHub repo root (or upload via web UI).</li>
+            <li>If you want bundled assets (default bird/pipe/bg/music), add an <code>assets/</code> folder next to <code>index.html</code> with those files named <code>bird.png</code>, <code>pipe.png</code>, <code>bg.jpg</code>, <code>music.mp3</code>.</li>
+            <li>GitHub Pages will serve the page — no server-side code required.</li>
+          </ol>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="panel canvasWrap">
+      <canvas id="game" width="800" height="600"></canvas>
+    </div>
+  </div>
+
+<script>
+// ---------- Persistent Flappy (single-file) ----------
+// Features added on top of previous version:
+// - Uploaded images/audio are saved to localStorage (as data URLs) so they'll persist on refresh
+// - Buttons to clear stored assets and to fall back to bundled files in /assets/ if present
+// - All functionality is single-file; to bundle assets for GitHub Pages create an assets/ folder
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let W = canvas.width, H = canvas.height;
+
+// UI elements
+const birdFile = document.getElementById('birdFile');
+const pipeFile = document.getElementById('pipeFile');
+const bgFile = document.getElementById('bgFile');
+const musicFile = document.getElementById('musicFile');
+const startBtn = document.getElementById('startBtn');
+const pauseBtn = document.getElementById('pauseBtn');
+const scoreTop = document.getElementById('scoreTop');
+const bestTop = document.getElementById('bestTop');
+const vol = document.getElementById('vol');
+const gravityInput = document.getElementById('gravity');
+const jumpInput = document.getElementById('jump');
+const gapInput = document.getElementById('gap');
+
+const clearBirdBtn = document.getElementById('clearBird');
+const clearPipeBtn = document.getElementById('clearPipe');
+const clearBgBtn = document.getElementById('clearBg');
+const clearMusicBtn = document.getElementById('clearMusic');
+const useDefaultBird = document.getElementById('useDefaultBird');
+const useDefaultPipe = document.getElementById('useDefaultPipe');
+const useDefaultBg = document.getElementById('useDefaultBg');
+const useDefaultMusic = document.getElementById('useDefaultMusic');
+
+let birdImg = null, pipeImg = null, bgImg = null;
+let music = null; let musicPlaying = false;
+
+// default fallback drawing if nothing present
+function drawFallbackBg(ctx){
+  ctx.fillStyle = '#87CEEB';
+  ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = '#7CFC00';
+  ctx.fillRect(0,H-80,W,80);
+}
+
+// Helpers
+function dataURLFromFile(file, callback){
+  const fr = new FileReader();
+  fr.onload = ()=> callback(fr.result);
+  fr.onerror = ()=> callback(null);
+  fr.readAsDataURL(file);
+}
+
+function loadImageFromDataURL(dataURL, callback){
+  if(!dataURL) return callback(null);
+  const img = new Image();
+  img.onload = ()=> callback(img);
+  img.onerror = ()=> callback(null);
+  img.src = dataURL;
+}
+
+function saveToStorage(key, dataURL){
+  try{ localStorage.setItem(key, dataURL); }catch(e){ console.warn('Could not save to localStorage', e); }
+}
+
+function removeFromStorage(key){ localStorage.removeItem(key); }
+
+function loadAudioFromDataURL(dataURL){
+  if(!dataURL) return null;
+  const a = new Audio();
+  a.src = dataURL; a.loop = true; a.volume = vol.value;
+  return a;
+}
+
+// Keys
+const K_BIRD = 'flappy_bird';
+const K_PIPE = 'flappy_pipe';
+const K_BG = 'flappy_bg';
+const K_MUSIC = 'flappy_music';
+
+// try load from storage on start
+function loadStoredAssets(){
+  const b = localStorage.getItem(K_BIRD);
+  const p = localStorage.getItem(K_PIPE);
+  const bg = localStorage.getItem(K_BG);
+  const m = localStorage.getItem(K_MUSIC);
+
+  if(b) loadImageFromDataURL(b, img=>{ if(img) { birdImg = img; bird.w = Math.min(80, img.width*0.22 + 20); bird.h = Math.min(60, img.height*0.22 + 20); } });
+  if(p) loadImageFromDataURL(p, img=>{ if(img) pipeImg = img; });
+  if(bg) loadImageFromDataURL(bg, img=>{ if(img) bgImg = img; });
+  if(m) { music = loadAudioFromDataURL(m); }
+}
+
+// allow using bundled assets from /assets/ if repo includes them
+function useBundledAssets(){
+  // these files are optional; if present they will load from the site root /assets/
+  loadImageFromURL('assets/bird.png', img=>{ if(img){ birdImg = img; bird.w = Math.min(80, img.width*0.22 + 20); bird.h = Math.min(60, img.height*0.22 + 20); } });
+  loadImageFromURL('assets/pipe.png', img=>{ if(img) pipeImg = img; });
+  loadImageFromURL('assets/bg.jpg', img=>{ if(img) bgImg = img; });
+  fetch('assets/music.mp3').then(r=>{ if(r.ok) { const a = new Audio('assets/music.mp3'); a.loop=true; a.volume=vol.value; music=a; } }).catch(()=>{});
+}
+
+function loadImageFromURL(url, cb){ const img = new Image(); img.crossOrigin='anonymous'; img.onload=()=>cb(img); img.onerror=()=>cb(null); img.src=url; }
+
+// game state
+let playing = false, paused = false;
+let bird = {x:150,y:300,vy:0,w:40,h:30,angle:0};
+let pipes = [];
+let frame=0; let score=0; let best = parseInt(localStorage.getItem('flappy_best')||0,10);
+bestTop.textContent = 'Best: '+best;
+
+function reset(){
+  bird = {x:150,y:H/2,vy:0,w:bird.w||40,h:bird.h||30,angle:0};
+  pipes = [];
+  frame = 0; score = 0; playing = true; paused=false;
+  if(music){ try{ music.currentTime = 0; music.play(); musicPlaying=true; }catch(e){} }
+}
+
+function spawnPipe(){
+  const gap = parseInt(gapInput.value,10);
+  const min = 80, max = H-200;
+  const top = Math.floor(Math.random()*(max-min))+min;
+  pipes.push({x:W, top, width:80, passed:false});
+}
+
+function update(){
+  if(!playing || paused) return;
+  frame++;
+  const g = parseFloat(gravityInput.value);
+  const jump = parseFloat(jumpInput.value);
+  // bird physics
+  bird.vy += g;
+  bird.y += bird.vy;
+  bird.angle = Math.max(-0.6, Math.min(0.9, bird.vy/10));
+
+  // pipes
+  if(frame%100===0) spawnPipe();
+  for(let i=pipes.length-1;i>=0;i--){
+    pipes[i].x -= 3 + Math.floor(frame/1000);
+    const p = pipes[i];
+    const gap = parseInt(gapInput.value,10);
+    if(!p.passed && p.x + p.width < bird.x){ p.passed = true; score++; scoreTop.textContent = 'Score: '+score; if(score>best){best=score; localStorage.setItem('flappy_best',best); bestTop.textContent='Best: '+best}};
+    if(p.x + p.width < -50) pipes.splice(i,1);
+    const birdBox = {l:bird.x - bird.w/2, r:bird.x + bird.w/2, t:bird.y - bird.h/2, b:bird.y + bird.h/2};
+    const topBox = {l:p.x, r:p.x+p.width, t:0, b:p.top};
+    const bottomBox = {l:p.x, r:p.x+p.width, t:p.top+gap, b:H};
+    if(rectOverlap(birdBox, topBox) || rectOverlap(birdBox, bottomBox)){
+      die();
+    }
+  }
+
+  // ground collision
+  if(bird.y + bird.h/2 >= H-80){ die(); }
+  if(bird.y - bird.h/2 <= 0){ bird.y = bird.h/2; bird.vy = 0; }
+}
+
+function rectOverlap(a,b){ return !(a.r < b.l || a.l > b.r || a.b < b.t || a.t > b.b); }
+
+function die(){ playing=false; if(music){ try{ music.pause(); musicPlaying=false }catch(e){} } }
+
+function draw(){
+  // background
+  if(bgImg){
+    ctx.drawImage(bgImg, 0, 0, bgImg.width, bgImg.height, 0, 0, W, H);
+  } else {
+    drawFallbackBg(ctx);
+  }
+
+  // pipes
+  for(const p of pipes){
+    const gap = parseInt(gapInput.value,10);
+    const pipeW = p.width;
+    if(pipeImg){
+      // top pipe (flip)
+      ctx.save();
+      ctx.translate(p.x + pipeW/2, p.top);
+      ctx.scale(1,-1);
+      ctx.drawImage(pipeImg, -pipeW/2, 0, pipeW, p.top);
+      ctx.restore();
+      // bottom pipe
+      ctx.drawImage(pipeImg, p.x, p.top+gap, pipeW, H - (p.top+gap) - 80);
+    } else {
+      ctx.fillStyle = '#2F855A';
+      ctx.fillRect(p.x, 0, pipeW, p.top);
+      ctx.fillRect(p.x, p.top+gap, pipeW, H-(p.top+gap)-80);
+    }
+  }
+
+  // ground overlay
+  ctx.fillStyle = '#5C8A00';
+  ctx.fillRect(0,H-80,W,80);
+
+  // bird
+  ctx.save();
+  ctx.translate(bird.x, bird.y);
+  ctx.rotate(bird.angle);
+  if(birdImg){
+    const bw = bird.w, bh = bird.h;
+    ctx.drawImage(birdImg, -bw/2, -bh/2, bw, bh);
+  } else {
+    ctx.fillStyle = '#FFCC00';
+    ctx.beginPath(); ctx.ellipse(0,0,bird.w/2,bird.h/2,0,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#000'; ctx.fillRect(6,-4,10,8);
+  }
+  ctx.restore();
+
+  // HUD when not playing
+  if(!playing){
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(W/2 - 170, H/2 - 90, 340, 140);
+    ctx.fillStyle = '#fff'; ctx.font = '22px sans-serif'; ctx.textAlign='center';
+    ctx.fillText('Click / Space to flap — Press Start to play', W/2, H/2 - 40);
+    ctx.fillText('Score: '+score, W/2, H/2 - 5);
+    ctx.fillText('Best: '+best, W/2, H/2 + 30);
+  }
+}
+
+function loop(){ update(); draw(); requestAnimationFrame(loop); }
+
+// controls
+function flap(){ if(!playing) { reset(); return } bird.vy = -parseFloat(jumpInput.value); }
+
+window.addEventListener('keydown', (e)=>{ if(e.code==='Space'){ e.preventDefault(); flap(); } });
+canvas.addEventListener('mousedown', (e)=>{ flap(); });
+canvas.addEventListener('touchstart',(e)=>{ e.preventDefault(); flap(); }, {passive:false});
+
+startBtn.addEventListener('click', ()=>{ reset(); });
+pauseBtn.addEventListener('click', ()=>{ paused = !paused; if(paused) { pauseBtn.textContent='Resume'; if(music){ try{ music.pause(); }catch(e){} }} else { pauseBtn.textContent='Pause'; if(music && playing){ try{ music.play(); }catch(e){} } } });
+
+vol.addEventListener('input', ()=>{ if(music) music.volume = vol.value; });
+
+// file inputs handling and persistence
+birdFile.addEventListener('change', ()=>{ const f = birdFile.files[0]; if(!f) return; dataURLFromFile(f,(dataURL)=>{ if(dataURL){ saveToStorage(K_BIRD, dataURL); loadImageFromDataURL(dataURL,(img)=>{ if(img){ birdImg=img; bird.w = Math.min(80, img.width*0.22 + 20); bird.h = Math.min(60, img.height*0.22 + 20); } else alert('Could not load bird image'); }); } }); });
+
+pipeFile.addEventListener('change', ()=>{ const f = pipeFile.files[0]; if(!f) return; dataURLFromFile(f,(dataURL)=>{ if(dataURL){ saveToStorage(K_PIPE, dataURL); loadImageFromDataURL(dataURL,(img)=>{ if(img) pipeImg=img; else alert('Could not load pipe image'); } ); } }); });
+
+bgFile.addEventListener('change', ()=>{ const f = bgFile.files[0]; if(!f) return; dataURLFromFile(f,(dataURL)=>{ if(dataURL){ saveToStorage(K_BG, dataURL); loadImageFromDataURL(dataURL,(img)=>{ if(img) bgImg=img; else alert('Could not load background image'); } ); } }); });
+
+musicFile.addEventListener('change', ()=>{ const f = musicFile.files[0]; if(!f) return; dataURLFromFile(f,(dataURL)=>{ if(dataURL){ saveToStorage(K_MUSIC, dataURL); if(music){ try{ music.pause(); }catch(e){} music=null; } music = loadAudioFromDataURL(dataURL); if(music && playing) { try{ music.play(); }catch(e){} } } }); });
+
+// clear buttons
+clearBirdBtn.addEventListener('click', ()=>{ removeFromStorage(K_BIRD); birdImg=null; alert('Stored bird cleared.'); });
+clearPipeBtn.addEventListener('click', ()=>{ removeFromStorage(K_PIPE); pipeImg=null; alert('Stored pipe cleared.'); });
+clearBgBtn.addEventListener('click', ()=>{ removeFromStorage(K_BG); bgImg=null; alert('Stored background cleared.'); });
+clearMusicBtn.addEventListener('click', ()=>{ removeFromStorage(K_MUSIC); if(music){ try{ music.pause(); }catch(e){} music=null; } alert('Stored music cleared.'); });
+
+useDefaultBird.addEventListener('click', ()=>{ loadImageFromURL('assets/bird.png', img=>{ if(img){ birdImg=img; bird.w = Math.min(80, img.width*0.22 + 20); bird.h = Math.min(60, img.height*0.22 + 20); alert('Loaded bundled bird (assets/bird.png)'); } else alert('No bundled bird found at assets/bird.png'); }); });
+useDefaultPipe.addEventListener('click', ()=>{ loadImageFromURL('assets/pipe.png', img=>{ if(img){ pipeImg=img; alert('Loaded bundled pipe (assets/pipe.png)'); } else alert('No bundled pipe found at assets/pipe.png'); }); });
+useDefaultBg.addEventListener('click', ()=>{ loadImageFromURL('assets/bg.jpg', img=>{ if(img){ bgImg=img; alert('Loaded bundled background (assets/bg.jpg)'); } else alert('No bundled background found at assets/bg.jpg'); }); });
+useDefaultMusic.addEventListener('click', ()=>{ fetch('assets/music.mp3').then(r=>{ if(r.ok){ music = new Audio('assets/music.mp3'); music.loop=true; music.volume=vol.value; if(playing) try{ music.play(); }catch(e){} alert('Loaded bundled music (assets/music.mp3)'); } else alert('No bundled music found at assets/music.mp3'); }).catch(()=>alert('No bundled music found at assets/music.mp3')); });
+
+// responsive canvas
+function resize(){ const ratio = window.devicePixelRatio || 1; const maxW = Math.min(1400, Math.max(600, window.innerWidth - 480)); canvas.width = Math.floor(maxW); canvas.height = Math.floor(window.innerHeight - 80); W = canvas.width; H = canvas.height; }
+window.addEventListener('resize', ()=>{ resize(); }); resize();
+
+// initial load
+loadStoredAssets();
+loop();
+
+</script>
+</body>
+</html>
