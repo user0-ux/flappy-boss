@@ -2,82 +2,290 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Flappy — Fullscreen</title>
+  <meta name="robots" content="noindex" />
   <style>
-    html,body{height:100%;margin:0;background:#000}
-    canvas{display:block;width:100vw;height:100vh}
-    /* hide scrollbars on mobile */
-    body{overflow:hidden}
+    /* Full-bleed canvas, no UI chrome */
+    html,body{height:100%;margin:0;background:#000;overflow:hidden}
+    canvas{display:block; width:100vw; height:100vh}
+    /* Prevent touch scrolling on mobile */
+    body,html{touch-action:none}
   </style>
 </head>
 <body>
   <canvas id="game"></canvas>
 
 <script>
-// Fullscreen Flappy — developer bundled assets, no UI text
+/*
+  Fullscreen Flappy — developer-bundled assets only
+  Required files (place in repo root -> assets/):
+    - assets/bird.png  (preferred; .jpg is OK)
+    - assets/pipe.png  (preferred; .jpg is OK)
+    - assets/bg.jpg    (preferred; .png is OK)
+    - assets/music.mp3 (preferred; .ogg is OK)
+  Behavior:
+    - No left panel or text overlays: only the canvas is visible.
+    - Music will attempt to play on the first user gesture (click/tap/Space).
+*/
+
 const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
-let W=0,H=0;
+const ctx = canvas.getContext('2d', { alpha: false });
 
-// gameplay settings
-const gravityInput = { value: 0.6 };
-const jumpInput = { value: 5 };
-const gapInput = { value: 150 };
+let W = 800, H = 600;
+function resizeCanvas(){
+  const dpr = window.devicePixelRatio || 1;
+  W = Math.max(320, Math.floor(window.innerWidth));
+  H = Math.max(240, Math.floor(window.innerHeight));
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  canvas.width = Math.floor(W * dpr);
+  canvas.height = Math.floor(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
 
-// assets
-let birdImg=null, pipeImg=null, bgImg=null, music=null;
+// Simple settings (you can tweak values below)
+const SETTINGS = {
+  gravity: 0.6,
+  jump: 5,
+  gap: 150,
+  basePipeSpeed: 3
+};
 
-function loadImage(url){ return new Promise(res=>{ const img=new Image(); img.onload=()=>res(img); img.onerror=()=>res(null); img.src=url; }); }
+// Assets (loaded from /assets/)
+let birdImg = null, pipeImg = null, bgImg = null;
+let music = null;
+let assetsLoaded = false;
 
-async function loadBundled(){
+function loadImage(url){
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
+
+async function loadBundledAssets(){
+  // try common extensions; change names if you use different filenames
   birdImg = await loadImage('assets/bird.png') || await loadImage('assets/bird.jpg');
   pipeImg = await loadImage('assets/pipe.png') || await loadImage('assets/pipe.jpg');
-  bgImg = await loadImage('assets/bg.jpg') || await loadImage('assets/bg.png');
-  try{ music = new Audio(); music.src = 'assets/music.mp3'; music.loop=true; music.preload='auto'; music.volume = 0.5; }catch(e){ music=null; }
-  if(birdImg){ bird.w = Math.min(80, birdImg.width*0.22 + 20); bird.h = Math.min(60, birdImg.height*0.22 + 20); }
+  bgImg   = await loadImage('assets/bg.jpg')   || await loadImage('assets/bg.png');
+
+  // audio: create Audio but don't attempt to play until user gesture
+  try {
+    music = new Audio();
+    // prefer mp3 fallback to .ogg is up to you; site should include correct file
+    // set the source to mp3; if you use .ogg change here or include both check
+    music.src = 'assets/music.mp3';
+    music.loop = true;
+    music.preload = 'auto';
+    music.volume = 0.5;
+  } catch(e) {
+    music = null;
+  }
+
+  // set bird size if image available
+  if (birdImg) {
+    bird.w = Math.min(80, birdImg.width * 0.22 + 20) || 40;
+    bird.h = Math.min(60, birdImg.height * 0.22 + 20) || 30;
+  }
+  assetsLoaded = true;
 }
 
-function resize(){ const dpr = window.devicePixelRatio || 1; W = Math.max(320, Math.floor(window.innerWidth)); H = Math.max(240, Math.floor(window.innerHeight)); canvas.width = Math.floor(W * dpr); canvas.height = Math.floor(H * dpr); canvas.style.width = W + 'px'; canvas.style.height = H + 'px'; ctx.setTransform(dpr,0,0,dpr,0,0); }
-window.addEventListener('resize', resize);
+// Game state
+let playing = false;
+let paused = false;
+let frame = 0;
+let pipes = [];
+let score = 0, best = parseInt(localStorage.getItem('flappy_best') || '0', 10);
 
-// game state
-let playing=false, paused=false;
-let bird={x:150,y:300,vy:0,w:40,h:30,angle:0};
-let pipes=[]; let frame=0; let score=0; let best=0;
+// Bird object
+let bird = {
+  x: 150,
+  y: H/2,
+  vy: 0,
+  w: 40,
+  h: 30,
+  angle: 0
+};
 
-function reset(){ bird={x:150,y:H/2,vy:0,w:bird.w||40,h:bird.h||30,angle:0}; pipes=[]; frame=0; score=0; playing=true; paused=false; if(music){ try{ music.currentTime=0; music.play().catch(()=>{}); }catch(e){} } }
-
-function spawnPipe(){ const gap = parseInt(gapInput.value,10); const min=80, max=H-200; const top = Math.floor(Math.random()*(max-min))+min; pipes.push({x:W, top, width:80, passed:false}); }
-function rectOverlap(a,b){ return !(a.r < b.l || a.l > b.r || a.b < b.t || a.t > b.b); }
-function die(){ playing=false; if(music) try{ music.pause(); }catch(e){} }
-
-function update(){ if(!playing || paused) return; frame++; const g = parseFloat(gravityInput.value); bird.vy += g; bird.y += bird.vy; bird.angle = Math.max(-0.6, Math.min(0.9, bird.vy/10)); if(frame % 100 === 0) spawnPipe(); for(let i = pipes.length-1; i>=0; i--){ pipes[i].x -= 3 + Math.floor(frame/1000); const p = pipes[i]; const gap = parseInt(gapInput.value,10); if(!p.passed && p.x + p.width < bird.x){ p.passed = true; score++; if(score>best) best=score; } if(p.x + p.width < -50) pipes.splice(i,1); const birdBox={l:bird.x - bird.w/2, r:bird.x + bird.w/2, t:bird.y - bird.h/2, b:bird.y + bird.h/2}; const topBox={l:p.x, r:p.x+p.width, t:0, b:p.top}; const bottomBox={l:p.x, r:p.x+p.width, t:p.top+gap, b:H}; if(rectOverlap(birdBox, topBox) || rectOverlap(birdBox, bottomBox)){ die(); } }
-  if(bird.y + bird.h/2 >= H-80) die(); if(bird.y - bird.h/2 <= 0){ bird.y = bird.h/2; bird.vy = 0; }
+function resetGame(){
+  bird = {
+    x: 150,
+    y: H/2,
+    vy: 0,
+    w: bird.w || 40,
+    h: bird.h || 30,
+    angle: 0
+  };
+  pipes = [];
+  frame = 0;
+  score = 0;
+  playing = true;
+  paused = false;
+  // Attempt to play music now (allowed because we're calling from user gesture)
+  if (music) {
+    try { music.currentTime = 0; music.play().catch(()=>{}); } catch(e) {}
+  }
 }
 
-function draw(){ // background
-  if(bgImg){ ctx.drawImage(bgImg, 0, 0, bgImg.width, bgImg.height, 0, 0, W, H); } else { ctx.fillStyle='#87CEEB'; ctx.fillRect(0,0,W,H); }
+function spawnPipe(){
+  const gap = SETTINGS.gap;
+  const minTop = 80;
+  const maxTop = H - 200;
+  const top = Math.floor(Math.random() * Math.max(1, (maxTop - minTop))) + minTop;
+  pipes.push({ x: W, top, width: 80, passed: false });
+}
+
+function rectOverlap(a,b){
+  return !(a.r < b.l || a.l > b.r || a.b < b.t || a.t > b.b);
+}
+
+function die(){
+  playing = false;
+  if (music) {
+    try { music.pause(); } catch(e) {}
+  }
+  if (score > best) { best = score; localStorage.setItem('flappy_best', best); }
+}
+
+function update(){
+  if (!playing || paused) return;
+  frame++;
+  // physics
+  bird.vy += SETTINGS.gravity;
+  bird.y += bird.vy;
+  bird.angle = Math.max(-0.6, Math.min(0.9, bird.vy / 10));
+  // spawn pipes gradually
+  if (frame % 100 === 0) spawnPipe();
+
+  // update pipes
+  for (let i = pipes.length - 1; i >= 0; i--) {
+    const p = pipes[i];
+    p.x -= (SETTINGS.basePipeSpeed + Math.floor(frame / 1000));
+    const gap = SETTINGS.gap;
+    if (!p.passed && p.x + p.width < bird.x) {
+      p.passed = true;
+      score++;
+    }
+    if (p.x + p.width < -50) pipes.splice(i, 1);
+    // collision detection
+    const birdBox = { l: bird.x - bird.w/2, r: bird.x + bird.w/2, t: bird.y - bird.h/2, b: bird.y + bird.h/2 };
+    const topBox = { l: p.x, r: p.x + p.width, t: 0, b: p.top };
+    const bottomBox = { l: p.x, r: p.x + p.width, t: p.top + gap, b: H };
+    if (rectOverlap(birdBox, topBox) || rectOverlap(birdBox, bottomBox)) {
+      die();
+    }
+  }
+
+  // ground collision
+  if (bird.y + bird.h/2 >= H - 80) die();
+  if (bird.y - bird.h/2 <= 0) { bird.y = bird.h/2; bird.vy = 0; }
+}
+
+function draw(){
+  // background
+  if (bgImg) {
+    ctx.drawImage(bgImg, 0, 0, bgImg.width, bgImg.height, 0, 0, W, H);
+  } else {
+    ctx.fillStyle = '#87CEEB';
+    ctx.fillRect(0,0,W,H);
+  }
+
   // pipes
-  for(const p of pipes){ const gap = parseInt(gapInput.value,10); const pipeW = p.width; if(pipeImg){ ctx.save(); ctx.translate(p.x + pipeW/2, p.top); ctx.scale(1,-1); ctx.drawImage(pipeImg, -pipeW/2, 0, pipeW, p.top); ctx.restore(); ctx.drawImage(pipeImg, p.x, p.top+gap, pipeW, H - (p.top+gap) - 80); } else { ctx.fillStyle='#2F855A'; ctx.fillRect(p.x, 0, pipeW, p.top); ctx.fillRect(p.x, p.top+gap, pipeW, H-(p.top+gap)-80); } }
+  for (const p of pipes) {
+    const gap = SETTINGS.gap;
+    const pipeW = p.width;
+    if (pipeImg) {
+      ctx.save();
+      ctx.translate(p.x + pipeW/2, p.top);
+      ctx.scale(1, -1);
+      ctx.drawImage(pipeImg, -pipeW/2, 0, pipeW, p.top);
+      ctx.restore();
+      ctx.drawImage(pipeImg, p.x, p.top + gap, pipeW, H - (p.top + gap) - 80);
+    } else {
+      ctx.fillStyle = '#2F855A';
+      ctx.fillRect(p.x, 0, pipeW, p.top);
+      ctx.fillRect(p.x, p.top + gap, pipeW, H - (p.top + gap) - 80);
+    }
+  }
+
   // ground
-  ctx.fillStyle='#5C8A00'; ctx.fillRect(0,H-80,W,80);
+  ctx.fillStyle = '#5C8A00';
+  ctx.fillRect(0, H - 80, W, 80);
+
   // bird
-  ctx.save(); ctx.translate(bird.x, bird.y); ctx.rotate(bird.angle); if(birdImg){ ctx.drawImage(birdImg, -bird.w/2, -bird.h/2, bird.w, bird.h); } else { ctx.fillStyle='#FFCC00'; ctx.beginPath(); ctx.ellipse(0,0,bird.w/2,bird.h/2,0,0,Math.PI*2); ctx.fill(); } ctx.restore();
+  ctx.save();
+  ctx.translate(bird.x, bird.y);
+  ctx.rotate(bird.angle);
+  if (birdImg) {
+    ctx.drawImage(birdImg, -bird.w/2, -bird.h/2, bird.w, bird.h);
+  } else {
+    ctx.fillStyle = '#FFCC00';
+    ctx.beginPath();
+    ctx.ellipse(0,0,bird.w/2,bird.h/2,0,0,Math.PI*2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // intentionally NO on-canvas text or controls
 }
 
-function loop(){ update(); draw(); requestAnimationFrame(loop); }
+// main loop
+function loop(){
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
 
-function userFlap(){ if(!playing) { reset(); return; } bird.vy = -parseFloat(jumpInput.value); if(music && music.paused){ try{ music.play().catch(()=>{}); }catch(e){} } }
+// Player flap (starts game on first gesture)
+function playerFlap(){
+  if (!assetsLoaded) return; // wait until assets load
+  if (!playing) { resetGame(); return; }
+  bird.vy = -SETTINGS.jump;
+  // if music exists but paused, attempt to play (user gesture)
+  if (music && music.paused) {
+    try { music.play().catch(()=>{}); } catch(e) {}
+  }
+}
 
-// input
-window.addEventListener('keydown', e=>{ if(e.code==='Space'){ e.preventDefault(); userFlap(); } });
-canvas.addEventListener('mousedown', ()=>userFlap());
-canvas.addEventListener('touchstart', e=>{ e.preventDefault(); userFlap(); }, {passive:false});
+// Input bindings: Space, click, touch
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    playerFlap();
+  }
+});
 
-// start
-resize();
-loadBundled().then(()=>{ loop(); });
+// Single global gesture handler: also used to start music on first interaction
+function onFirstGesture(){
+  // Attempt to play music (allowed because this handler is from a user gesture)
+  if (music && music.paused) {
+    try { music.play().catch(()=>{}); } catch(e) {}
+  }
+  // Remove the temporary listener; future clicks will use playerFlap
+  window.removeEventListener('pointerdown', onFirstGesture);
+  window.removeEventListener('touchstart', onFirstGesture);
+  window.removeEventListener('keydown', firstKeyHandler);
+}
+function firstKeyHandler(e){
+  if (e.code === 'Space') onFirstGesture();
+}
+
+window.addEventListener('pointerdown', (e)=>{ playerFlap(); }); // pointerdown covers mouse & touch
+window.addEventListener('touchstart', (e)=>{ e.preventDefault(); playerFlap(); }, { passive: false });
+
+// Ensure we try to unlock audio on the very first gesture (some browsers require play from gesture)
+window.addEventListener('pointerdown', onFirstGesture, { once: true });
+window.addEventListener('touchstart', onFirstGesture, { once: true });
+window.addEventListener('keydown', firstKeyHandler, { once: true });
+
+// kick off
+resizeCanvas();
+loadBundledAssets().then(()=>{ loop(); });
 
 </script>
 </body>
