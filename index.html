@@ -81,7 +81,10 @@ function resetGame(){
   bird = { x:150, y:H/2, vy:0, w:bird.w||40, h:bird.h||30, angle:0 };
   pipes=[]; frame=0; score=0; playing=true; paused=false;
   if(music){
-    try{ music.currentTime=0; music.play().catch(err=>console.warn('play() rejected:',err)); }catch(e){ console.warn('play attempt failed',e); }
+    try{ 
+      music.currentTime=0; 
+      music.play().catch(err=>console.warn('play() rejected:',err)); 
+    }catch(e){ console.warn('play attempt failed',e); }
   }
 }
 
@@ -133,7 +136,7 @@ function draw(){
   }
   ctx.fillStyle='#5C8A00'; ctx.fillRect(0,H-80,W,80);
   ctx.save(); ctx.translate(bird.x,bird.y); ctx.rotate(bird.angle);
-  if(birdImg){ ctx.drawImage(birdImg, -bird.w/2, -bird.h/2, bird.w, bird.h); } else { ctx.fillStyle='#FFCC00'; ctx.beginPath(); ctx.ellipse(0,0,bird.w/2,bird.h/2,0,0,Math.PI*2); ctx.fill(); }
+  if(birdImg){ ctx.drawImage(birdImg, -bird.V/2, -bird.h/2, bird.w, bird.h); } else { ctx.fillStyle='#FFCC00'; ctx.beginPath(); ctx.ellipse(0,0,bird.w/2,bird.h/2,0,0,Math.PI*2); ctx.fill(); }
   ctx.restore();
 }
 
@@ -145,8 +148,6 @@ function playerFlap(){
   if(!assetsLoaded) return;
   if(!playing){ resetGame(); return; }
   bird.vy = -SETTINGS.jump;
-  // Optional: Resume music if it was paused by something else,
-  // but usually resetGame handles the main play() call.
   if(music && music.paused && playing){ try{ music.play().catch(()=>{}); }catch(e){} }
 }
 
@@ -161,26 +162,17 @@ const startBtn = document.getElementById('startBtn');
 
 async function onStartClicked(){
   // 1. Wait for assets to finish loading if they haven't already.
-  //    We wait for the *same promise* that started on page load.
   if (!assetsLoaded) {
       startBtn.textContent = "Loading..."; // Optional feedback
       await assetsPromise;
   }
 
-  // 2. Try to unlock audio immediately within this user gesture.
-  //    Even if it fails here (e.g. file not ready), we've made the attempt.
-  if(music){
-    try{
-        await music.play();
-        music.pause(); // Pause immediately; resetGame will play it for real.
-        music.currentTime = 0;
-    } catch(err){
-        console.warn('Audio unlock attempt failed:', err);
-    }
-  }
-
-  // 3. Remove overlay and start game
+  // 2. Remove overlay
   if(startOverlay && startOverlay.parentNode) startOverlay.parentNode.removeChild(startOverlay);
+  
+  // 3. Start the game. 
+  // The music.play() inside resetGame() will now work
+  // because this entire function was triggered by a user click.
   resetGame();
 }
 startBtn.addEventListener('click', onStartClicked);
